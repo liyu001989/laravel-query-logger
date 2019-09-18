@@ -9,7 +9,7 @@
  * with this source code in the file LICENSE.
  */
 
-namespace Overtrue\LaravelQueryLogger;
+namespace Liyu\LaravelQueryLogger;
 
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +27,18 @@ class ServiceProvider extends LaravelServiceProvider
             return;
         }
 
-        DB::listen(function (QueryExecuted $query) {
+        $path = realpath(__DIR__.'/../config/config.php');
+
+        $this->publishes([$path => config_path('query-log.php')], 'config');
+        $this->mergeConfigFrom($path, 'query-log');
+
+        if (!$this->app['config']->get('query-log.enable')) {
+            return;
+        }
+
+        $channel = $this->app['config']->get('query-log.channel') ?: $this->app['config']->get('logging.default');
+
+        DB::listen(function (QueryExecuted $query) use ($channel) {
             $sqlWithPlaceholders = str_replace(['%', '?'], ['%%', '%s'], $query->sql);
 
             $bindings = $query->connection->prepareBindings($query->bindings);
@@ -35,7 +46,7 @@ class ServiceProvider extends LaravelServiceProvider
             $realSql = vsprintf($sqlWithPlaceholders, array_map([$pdo, 'quote'], $bindings));
             $duration = $this->formatDuration($query->time / 1000);
 
-            Log::debug(sprintf('[%s] %s | %s: %s', $duration, $realSql, request()->method(), request()->getRequestUri()));
+            Log::channel($channel)->debug(sprintf('[%s] %s | %s: %s', $duration, $realSql, request()->method(), request()->getRequestUri()));
         });
     }
 
