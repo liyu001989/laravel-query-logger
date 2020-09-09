@@ -23,7 +23,7 @@ class ServiceProvider extends LaravelServiceProvider
      */
     public function boot()
     {
-        if (!$this->app['config']->get('app.debug')) {
+        if (!$this->app['config']->get('logging.query.enabled', false)) {
             return;
         }
 
@@ -39,6 +39,11 @@ class ServiceProvider extends LaravelServiceProvider
         $channel = $this->app['config']->get('query-log.channel') ?: $this->app['config']->get('logging.default');
 
         DB::listen(function (QueryExecuted $query) use ($channel) {
+
+            if ($query->time < $this->app['config']->get('logging.query.slower_than', 0)) {
+                return;
+            }
+
             $sqlWithPlaceholders = str_replace(['%', '?'], ['%%', '%s'], $query->sql);
 
             $bindings = $query->connection->prepareBindings($query->bindings);
@@ -50,7 +55,7 @@ class ServiceProvider extends LaravelServiceProvider
                 $realSql = vsprintf($sqlWithPlaceholders, array_map([$pdo, 'quote'], $bindings));
             }
 
-            Log::channel($channel)->debug(sprintf('[%s] %s | %s: %s', $duration, $realSql, request()->method(), request()->getRequestUri()));
+            Log::channel($channel)->debug(sprintf('[%s] [%s] %s | %s: %s', $query->connection->getDatabaseName(), $duration, $realSql, request()->method(), request()->getRequestUri()));
         });
     }
 
